@@ -15,7 +15,7 @@ SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXV
 # ============================================================
 # ANTHROPIC (Claude API)
 # ============================================================
-ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "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")
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "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")
 ANTHROPIC_MODEL   = "claude-sonnet-4-5"
 
 # ============================================================
