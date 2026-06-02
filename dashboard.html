@@ -1,0 +1,839 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Content Pipeline</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #f5f5f5; color: #1a1a1a; font-family: 'Segoe UI', sans-serif; min-height: 100vh; }
+
+  header {
+    background: #fff; border-bottom: 1px solid #e0e0e0;
+    padding: 16px 24px; display: flex; align-items: center; justify-content: space-between;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  }
+  .logo { font-family: monospace; font-size: 13px; color: #cc0000; letter-spacing: 0.15em; font-weight: 700; }
+  .status-badge { display: flex; align-items: center; gap: 8px; font-family: monospace; font-size: 11px; color: #888; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: #22c55e; }
+  .dot.running { background: #f59e0b; animation: pulse 1s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+  .main { display: grid; grid-template-columns: 320px 1fr; height: calc(100vh - 57px); }
+
+  .sidebar { background: #fff; border-right: 1px solid #e0e0e0; overflow-y: auto; }
+  .sidebar-section { padding: 16px; border-bottom: 1px solid #f0f0f0; }
+  .section-title { font-family: monospace; font-size: 10px; color: #aaa; letter-spacing: 0.2em; text-transform: uppercase; margin-bottom: 12px; }
+
+  .tabs { display: flex; gap: 3px; margin-bottom: 14px; flex-wrap: wrap; }
+  .tab { flex: 1; min-width: 80px; padding: 7px 4px; border-radius: 6px; font-size: 11px; font-weight: 500; cursor: pointer; border: 1px solid #e0e0e0; background: transparent; color: #888; transition: all 0.2s; text-align: center; }
+  .tab.active { background: rgba(204,0,0,0.08); border-color: #cc0000; color: #cc0000; }
+
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+
+  .form-group { margin-bottom: 10px; }
+  label { display: block; font-size: 11px; color: #888; margin-bottom: 4px; }
+  input[type="text"], input[type="url"], select {
+    width: 100%; background: #f9f9f9; border: 1px solid #e0e0e0;
+    border-radius: 7px; padding: 8px 10px; color: #1a1a1a;
+    font-size: 12px; outline: none; transition: border-color 0.2s;
+  }
+  input:focus, select:focus { border-color: #cc0000; }
+
+  .file-upload {
+    width: 100%; background: #f9f9f9; border: 1px dashed #ccc;
+    border-radius: 7px; padding: 12px; text-align: center;
+    cursor: pointer; transition: all 0.2s; color: #aaa; font-size: 12px;
+  }
+  .file-upload:hover { border-color: #cc0000; color: #cc0000; }
+  .file-upload.heeft-bestand { border-color: #22c55e; color: #22c55e; border-style: solid; }
+  input[type="file"] { display: none; }
+
+  .btn { width: 100%; padding: 10px; border-radius: 8px; font-size: 12px; font-weight: 600; cursor: pointer; border: none; transition: all 0.2s; margin-bottom: 6px; }
+  .btn-primary { background: #cc0000; color: #fff; }
+  .btn-primary:hover:not(:disabled) { background: #aa0000; }
+  .btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
+  .btn-danger { background: transparent; color: #cc0000; border: 1px solid rgba(204,0,0,0.3); }
+  .btn-danger:hover { background: rgba(204,0,0,0.06); }
+  .btn-ghost { background: transparent; color: #888; border: 1px solid #e0e0e0; font-size: 11px; padding: 7px; }
+  .btn-ghost:hover { color: #333; }
+
+  /* Flow */
+  .flow-step {
+    display: flex; align-items: center; gap: 8px;
+    padding: 7px 10px; border-radius: 6px; border: 1px solid #f0f0f0;
+    margin-bottom: 4px; background: #fafafa; transition: all 0.2s;
+  }
+  .flow-step.active { border-color: #cc0000; background: rgba(204,0,0,0.04); }
+  .flow-step.done   { border-color: rgba(34,197,94,0.4); background: rgba(34,197,94,0.03); }
+  .flow-num { font-family: monospace; font-size: 10px; color: #cc0000; background: rgba(204,0,0,0.08); padding: 1px 5px; border-radius: 3px; min-width: 22px; text-align: center; }
+  .flow-info { flex: 1; }
+  .flow-naam { font-size: 11px; color: #555; }
+  .flow-desc { font-size: 10px; color: #aaa; }
+  .flow-step.active .flow-naam { color: #cc0000; font-weight: 600; }
+  .flow-step.done .flow-naam   { color: #22c55e; }
+  .flow-dot { width: 6px; height: 6px; border-radius: 50%; background: #e0e0e0; }
+  .flow-dot.running { background: #f59e0b; animation: pulse 1s infinite; }
+  .flow-dot.done    { background: #22c55e; }
+  .flow-connector { width: 1px; height: 4px; background: #e0e0e0; margin-left: 20px; }
+
+  /* Product/Project kaarten */
+  .item-card {
+    background: #fafafa; border: 1px solid #e8e8e8; border-radius: 8px;
+    padding: 10px 12px; margin-bottom: 6px; cursor: pointer; transition: all 0.2s;
+  }
+  .item-card:hover { border-color: #cc0000; }
+  .item-card.selected { border-color: #cc0000; background: rgba(204,0,0,0.04); }
+  .item-naam { font-size: 12px; font-weight: 500; color: #1a1a1a; }
+  .item-meta { font-size: 10px; color: #aaa; margin-top: 3px; display: flex; gap: 8px; }
+  .badge { font-size: 10px; padding: 1px 6px; border-radius: 3px; font-family: monospace; }
+  .badge-green { background: rgba(34,197,94,0.1); color: #22c55e; }
+  .badge-red   { background: rgba(204,0,0,0.1); color: #cc0000; }
+  .badge-gray  { background: #f0f0f0; color: #888; }
+
+  /* Terminal */
+  .terminal-panel { display: flex; flex-direction: column; }
+  .panel-header { padding: 14px 20px; border-bottom: 1px solid #e0e0e0; background: #fff; display: flex; align-items: center; justify-content: space-between; }
+  .panel-title { font-size: 13px; font-weight: 600; }
+  .panel-sub   { font-size: 11px; color: #aaa; margin-top: 2px; }
+  .terminal { flex: 1; background: #1a1a1a; padding: 16px 20px; overflow-y: auto; font-family: monospace; font-size: 12px; line-height: 1.8; }
+  .log-dim   { color: #555; }
+  .log-gold  { color: #f59e0b; }
+  .log-green { color: #22c55e; }
+  .log-red   { color: #ff4444; }
+  .log-amber { color: #f59e0b; }
+  .cursor { display: inline-block; width: 7px; height: 13px; background: #cc0000; vertical-align: middle; animation: pulse 1s infinite; }
+  .action-bar { padding: 12px 20px; border-top: 1px solid #e0e0e0; background: #fff; display: flex; gap: 8px; align-items: center; }
+  .meta { font-family: monospace; font-size: 10px; color: #bbb; margin-left: auto; }
+
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-thumb { background: #ddd; border-radius: 2px; }
+
+  /* Planning */
+  .planning-kaart {
+    background: #fafafa; border: 1px solid #e8e8e8; border-radius: 8px;
+    padding: 12px; margin-bottom: 8px; transition: all 0.2s;
+  }
+  .planning-kaart.gepauzeerd { opacity: 0.5; border-style: dashed; }
+  .planning-header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .planning-volgorde {
+    font-family: monospace; font-size: 11px; font-weight: 700;
+    background: #cc0000; color: #fff; width: 24px; height: 24px;
+    border-radius: 50%; display: flex; align-items: center; justify-content: center;
+  }
+  .planning-naam { font-size: 12px; font-weight: 600; flex: 1; }
+  .planning-land { font-size: 10px; color: #aaa; }
+  .dag-grid { display: flex; gap: 3px; margin-bottom: 8px; }
+  .dag-btn {
+    flex: 1; padding: 4px 2px; border-radius: 4px; font-size: 10px;
+    font-weight: 600; cursor: pointer; border: 1px solid #e0e0e0;
+    background: #f5f5f5; color: #aaa; text-align: center; transition: all 0.2s;
+    font-family: monospace;
+  }
+  .dag-btn.actief { background: #cc0000; border-color: #cc0000; color: #fff; }
+  .planning-acties { display: flex; gap: 4px; }
+  .act-btn {
+    flex: 1; padding: 5px 4px; border-radius: 5px; font-size: 10px;
+    cursor: pointer; border: 1px solid #e0e0e0; background: transparent;
+    color: #888; transition: all 0.2s; text-align: center;
+  }
+  .act-btn:hover { background: #f0f0f0; }
+  .act-btn.gevaar { color: #cc0000; border-color: rgba(204,0,0,0.3); }
+  .act-btn.gevaar:hover { background: rgba(204,0,0,0.06); }
+  .act-btn.groen { color: #22c55e; border-color: rgba(34,197,94,0.3); }
+  .status-pill {
+    font-size: 9px; padding: 2px 6px; border-radius: 10px;
+    font-family: monospace; font-weight: 600;
+  }
+  .status-klaar   { background: rgba(34,197,94,0.1); color: #22c55e; }
+  .status-draait  { background: rgba(245,158,11,0.1); color: #f59e0b; }
+  .status-mislukt { background: rgba(204,0,0,0.1); color: #cc0000; }
+  .status-wacht   { background: #f0f0f0; color: #aaa; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">AI CONTENT PIPELINE</div>
+  <div class="status-badge">
+    <div class="dot" id="statusDot"></div>
+    <span id="statusText">GEREED</span>
+  </div>
+</header>
+
+<div class="main">
+  <div class="sidebar">
+
+    <!-- Tabs -->
+    <div class="sidebar-section">
+      <div class="tabs">
+        <button class="tab active" onclick="switchTab('product')"   id="tab-product">Nieuw product</button>
+        <button class="tab"        onclick="switchTab('project')"   id="tab-project">Nieuw project</button>
+        <button class="tab"        onclick="switchTab('dagelijks')"  id="tab-dagelijks">Dagelijks</button>
+        <button class="tab"        onclick="switchTab('planning')"   id="tab-planning">Planning</button>
+      </div>
+
+      <!-- TAB: Nieuw product -->
+      <div class="tab-content active" id="content-product">
+        <div class="form-group">
+          <label>Productnaam</label>
+          <input type="text" id="productNaam" placeholder="bijv. SPika Oil">
+        </div>
+        <div class="form-group">
+          <label>Product URL</label>
+          <input type="url" id="productUrl" placeholder="https://...">
+        </div>
+        <div class="form-group">
+          <label>Productfoto URL</label>
+          <input type="url" id="productFoto" placeholder="https://.../foto.jpg">
+        </div>
+        <div class="form-group">
+          <label>Doelland</label>
+          <input type="text" id="productDoelland" value="Nederland">
+        </div>
+        <div class="form-group">
+          <label>Doeltaal</label>
+          <input type="text" id="productDoeltaal" value="Nederlands">
+        </div>
+        <div class="form-group">
+          <label>Brand Manual PDF</label>
+          <div class="file-upload" id="fileUploadArea" onclick="document.getElementById('pdfInput').click()">
+            <div id="fileUploadText">Klik om PDF te selecteren</div>
+          </div>
+          <input type="file" id="pdfInput" accept=".pdf" onchange="pdfGeselecteerd(this)">
+        </div>
+        <button class="btn btn-primary" id="btnSetup" onclick="startSetup()">
+          + Nieuw product toevoegen
+        </button>
+      </div>
+
+      <!-- TAB: Nieuw project -->
+      <div class="tab-content" id="content-project">
+        <div class="form-group">
+          <label>Kies product</label>
+          <select id="projectProductSelect">
+            <option value="">-- Selecteer product --</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Projectnaam</label>
+          <input type="text" id="projectNaam" placeholder="bijv. SPika NL">
+        </div>
+        <div class="form-group">
+          <label>Doelland</label>
+          <input type="text" id="projectDoelland" placeholder="bijv. Nederland">
+        </div>
+        <div class="form-group">
+          <label>Doeltaal</label>
+          <input type="text" id="projectDoeltaal" placeholder="bijv. Nederlands">
+        </div>
+        <div class="form-group">
+          <label>Instagram account</label>
+          <input type="text" id="instagramAccount" placeholder="@account">
+        </div>
+        <div class="form-group">
+          <label>TikTok account</label>
+          <input type="text" id="tiktokAccount" placeholder="@account">
+        </div>
+        <button class="btn btn-primary" id="btnProject" onclick="startNieuwProject()">
+          + Nieuw project aanmaken
+        </button>
+      </div>
+
+      <!-- TAB: Dagelijks -->
+      <div class="tab-content" id="content-dagelijks">
+        <div class="form-group">
+          <label>Project selecteren</label>
+          <select id="projectSelect">
+            <option value="">-- Alle projecten --</option>
+          </select>
+        </div>
+        <button class="btn btn-primary" id="btnStart" onclick="startPipeline()">
+          Pipeline starten
+        </button>
+        <button class="btn btn-danger" id="btnStop" onclick="stopPipeline()" style="display:none">
+          Stoppen
+        </button>
+      </div>
+
+      <!-- TAB: Planning -->
+      <div class="tab-content" id="content-planning">
+        <div class="form-group">
+          <label>Project toevoegen aan planning</label>
+          <select id="planningProjectSelect">
+            <option value="">-- Selecteer project --</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Volgorde</label>
+          <input type="number" id="planningVolgorde" value="1" min="1" style="width:80px">
+        </div>
+        <div class="form-group">
+          <label>Uitvoeren op</label>
+          <div class="dag-grid" style="margin-bottom:0">
+            <div class="dag-btn actief" data-dag="ma" onclick="toggleDagNieuw(this)">ma</div>
+            <div class="dag-btn actief" data-dag="di" onclick="toggleDagNieuw(this)">di</div>
+            <div class="dag-btn actief" data-dag="wo" onclick="toggleDagNieuw(this)">wo</div>
+            <div class="dag-btn actief" data-dag="do" onclick="toggleDagNieuw(this)">do</div>
+            <div class="dag-btn actief" data-dag="vr" onclick="toggleDagNieuw(this)">vr</div>
+            <div class="dag-btn" data-dag="za" onclick="toggleDagNieuw(this)">za</div>
+            <div class="dag-btn" data-dag="zo" onclick="toggleDagNieuw(this)">zo</div>
+          </div>
+        </div>
+        <button class="btn btn-primary" onclick="voegToeAanPlanning()">
+          + Toevoegen aan planning
+        </button>
+      </div>
+    </div>
+
+    <!-- Planning overzicht -->
+    <div class="sidebar-section" id="planning-overzicht" style="display:none">
+      <div class="section-title">Planning vandaag</div>
+      <div id="planningLijst">
+        <div style="font-size:11px;color:#aaa">Laden...</div>
+      </div>
+    </div>
+
+    <!-- Flow indicators -->
+    <div class="sidebar-section" id="flow-section" style="display:none">
+      <div class="section-title" id="flow-title">Flow</div>
+      <div id="flow-container"></div>
+    </div>
+
+    <!-- Producten & Projecten overzicht -->
+    <div class="sidebar-section">
+      <div class="section-title">Actieve projecten</div>
+      <div id="projectenLijst">
+        <div style="font-size:11px; color:#aaa;">Laden...</div>
+      </div>
+    </div>
+
+    <div class="sidebar-section">
+      <button class="btn btn-ghost" onclick="clearLogs()">Logs wissen</button>
+    </div>
+
+  </div>
+
+  <!-- Terminal -->
+  <div class="terminal-panel">
+    <div class="panel-header">
+      <div>
+        <div class="panel-title">Live Output</div>
+        <div class="panel-sub" id="panelSub">Wacht op actie...</div>
+      </div>
+    </div>
+    <div class="terminal" id="terminal">
+      <div class="log-dim">================================================</div>
+      <div class="log-amber">  AI Content Pipeline Dashboard</div>
+      <div class="log-dim">  Server: http://162.55.215.56:8000</div>
+      <div class="log-dim">================================================</div>
+      <div class="log-dim"> </div>
+      <div class="log-dim">  Nieuw product: vul formulier in en upload PDF</div>
+      <div class="log-dim">  Nieuw project: kies product en vul gegevens in</div>
+      <div class="log-dim">  Dagelijks: selecteer project en start pipeline</div>
+      <div class="log-dim"> </div>
+      <span class="cursor"></span>
+    </div>
+    <div class="action-bar">
+      <div class="meta" id="metaInfo">Nog niet gestart</div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const API = "http://162.55.215.56:8000";
+  let polling = null;
+  let vorigeLogCount = 0;
+  let isDraait = false;
+
+  const FLOWS = {
+    product: [
+      {num: "A0", naam: "Brand Manual", desc: "PDF -> brand manual"},
+      {num: "A1", naam: "Soul ID", desc: "Consistent gezicht"}
+    ],
+    project: [
+      {num: "A1", naam: "Soul ID", desc: "Soul ID voor project"},
+      {num: "A2", naam: "Market Research", desc: "Trends per land"}
+    ],
+    dagelijks: [
+      {num: "A2", naam: "Market Research", desc: "Trends checken"},
+      {num: "A3", naam: "Script Maker", desc: "2x 8 sec scripts"},
+      {num: "A4", naam: "Video Generator", desc: "Higgsfield prompts"},
+      {num: "A5", naam: "Publisher", desc: "Instagram + TikTok"}
+    ]
+  };
+
+  // ── Tabs ──
+  function switchTab(tab) {
+    document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
+    document.querySelectorAll(".tab-content").forEach(c => c.classList.remove("active"));
+    document.getElementById(`tab-${tab}`).classList.add("active");
+    document.getElementById(`content-${tab}`).classList.add("active");
+    if (tab === "planning") laadPlanningProjecten();
+  }
+
+  async function laadPlanningProjecten() {
+    try {
+      const res  = await fetch(`${API}/projecten`);
+      const data = await res.json();
+      const projecten = Array.isArray(data.projecten) ? data.projecten : [];
+      const sel = document.getElementById("planningProjectSelect");
+      sel.innerHTML = '<option value="">-- Selecteer project --</option>';
+      projecten.forEach(p => {
+        const opt = document.createElement("option");
+        opt.value       = p.id;
+        opt.textContent = `${p.project_naam} - ${p.doelland}`;
+        sel.appendChild(opt);
+      });
+    } catch(e) { console.error(e); }
+  }
+
+  // ── Flow tonen ──
+  function toonFlow(type) {
+    const section   = document.getElementById("flow-section");
+    const container = document.getElementById("flow-container");
+    const title     = document.getElementById("flow-title");
+
+    section.style.display = "block";
+    title.textContent = type === "product" ? "Product setup" : type === "project" ? "Project setup" : "Dagelijkse flow";
+
+    container.innerHTML = "";
+    FLOWS[type].forEach((stap, i) => {
+      if (i > 0) {
+        const conn = document.createElement("div");
+        conn.className = "flow-connector";
+        container.appendChild(conn);
+      }
+      const el = document.createElement("div");
+      el.className = "flow-step";
+      el.id        = `flow-stap-${i}`;
+      el.innerHTML = `
+        <span class="flow-num">${stap.num}</span>
+        <div class="flow-info">
+          <div class="flow-naam">${stap.naam}</div>
+          <div class="flow-desc">${stap.desc}</div>
+        </div>
+        <div class="flow-dot" id="fdot-${i}"></div>
+      `;
+      container.appendChild(el);
+    });
+  }
+
+  // ── PDF selectie ──
+  function pdfGeselecteerd(input) {
+    if (input.files[0]) {
+      document.getElementById("fileUploadArea").classList.add("heeft-bestand");
+      document.getElementById("fileUploadText").textContent = input.files[0].name;
+    }
+  }
+
+  // ── Setup nieuw product ──
+  async function startSetup() {
+    const pdfInput = document.getElementById("pdfInput");
+    if (!pdfInput.files[0]) { alert("Selecteer eerst een PDF bestand"); return; }
+    if (isDraait) { alert("Pipeline draait al"); return; }
+
+    const formData = new FormData();
+    formData.append("pdf",          pdfInput.files[0]);
+    formData.append("product_naam", document.getElementById("productNaam").value);
+    formData.append("product_url",  document.getElementById("productUrl").value);
+    formData.append("product_foto", document.getElementById("productFoto").value);
+    formData.append("doelland",     document.getElementById("productDoelland").value);
+    formData.append("doeltaal",     document.getElementById("productDoeltaal").value);
+
+    try {
+      const res  = await fetch(`${API}/agent0/upload-pdf`, {method: "POST", body: formData});
+      const data = await res.json();
+      if (data.success) {
+        setUiDraait(true);
+        clearTerminal();
+        toonFlow("product");
+        document.getElementById("panelSub").textContent = "Product setup: Agent 0 -> Agent 1";
+        addLog("Product setup gestart: Agent 0 -> Agent 1", "gold");
+        startPolling();
+      } else {
+        alert(data.bericht);
+      }
+    } catch(e) {
+      addLog(`Verbindingsfout: ${e.message}`, "red");
+    }
+  }
+
+  // ── Nieuw project aanmaken ──
+  async function startNieuwProject() {
+    const productId = document.getElementById("projectProductSelect").value;
+    const naam      = document.getElementById("projectNaam").value;
+    const doelland  = document.getElementById("projectDoelland").value;
+    const doeltaal  = document.getElementById("projectDoeltaal").value;
+
+    if (!productId) { alert("Selecteer eerst een product"); return; }
+    if (!naam)      { alert("Vul een projectnaam in"); return; }
+    if (!doelland)  { alert("Vul een doelland in"); return; }
+    if (isDraait)   { alert("Pipeline draait al"); return; }
+
+    try {
+      const res  = await fetch(`${API}/projecten/nieuw`, {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({
+          product_id:        parseInt(productId),
+          project_naam:      naam,
+          doelland:          doelland,
+          doeltaal:          doeltaal,
+          instagram_account: document.getElementById("instagramAccount").value,
+          tiktok_account:    document.getElementById("tiktokAccount").value
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setUiDraait(true);
+        clearTerminal();
+        toonFlow("project");
+        document.getElementById("panelSub").textContent = `Project setup: ${naam}`;
+        addLog(`Project ${naam} aangemaakt (ID: ${data.project_id})`, "gold");
+        addLog("Setup gestart: Agent 1 -> Agent 2", "amber");
+        startPolling();
+        laadProjecten();
+      } else {
+        alert(data.bericht);
+      }
+    } catch(e) {
+      addLog(`Verbindingsfout: ${e.message}`, "red");
+    }
+  }
+
+  // ── Dagelijkse pipeline ──
+  async function startPipeline() {
+    const projectId = document.getElementById("projectSelect").value;
+    if (isDraait) { alert("Pipeline draait al"); return; }
+
+    try {
+      const res  = await fetch(`${API}/pipeline/starten`, {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({project_id: projectId ? parseInt(projectId) : null})
+      });
+      const data = await res.json();
+      if (data.success) {
+        setUiDraait(true);
+        clearTerminal();
+        toonFlow("dagelijks");
+        document.getElementById("panelSub").textContent = "Dagelijks: Agent 2 -> 3 -> 4 -> 5";
+        addLog("Dagelijkse pipeline gestart", "gold");
+        startPolling();
+      } else {
+        alert(data.bericht);
+      }
+    } catch(e) {
+      addLog(`Verbindingsfout: ${e.message}`, "red");
+    }
+  }
+
+  async function stopPipeline() {
+    await fetch(`${API}/pipeline/stoppen`, {method: "POST"});
+    setUiDraait(false);
+  }
+
+  // ── Polling ──
+  async function haalLogsOp() {
+    try {
+      const res  = await fetch(`${API}/logs`);
+      const data = await res.json();
+      const logs = data.logs || [];
+      if (logs.length > vorigeLogCount) {
+        logs.slice(vorigeLogCount).forEach(l => addLog(`[${l.tijd}] ${l.tekst}`, l.type));
+        vorigeLogCount = logs.length;
+      }
+    } catch(e) {}
+  }
+
+  async function haalStatusOp() {
+    try {
+      const res  = await fetch(`${API}/status`);
+      const data = await res.json();
+
+      if (!data.draait && isDraait) {
+        setTimeout(() => {
+          stopPolling();
+          setUiDraait(false);
+          laadProjecten();
+          laadProducten();
+        }, 2000);
+      }
+      isDraait = data.draait;
+
+      if (data.laatste_run) {
+        document.getElementById("metaInfo").textContent = `Laatste run: ${data.laatste_run}`;
+      }
+    } catch(e) {}
+  }
+
+  function setUiDraait(draait) {
+    isDraait = draait;
+    document.getElementById("statusDot").className    = draait ? "dot running" : "dot";
+    document.getElementById("statusText").textContent  = draait ? "DRAAIT" : "GEREED";
+    document.getElementById("btnStart").disabled       = draait;
+    document.getElementById("btnSetup").disabled       = draait;
+    document.getElementById("btnProject").disabled     = draait;
+    document.getElementById("btnStop").style.display   = draait ? "block" : "none";
+  }
+
+  function addLog(tekst, type = "dim") {
+    const terminal = document.getElementById("terminal");
+    const cursor   = terminal.querySelector(".cursor");
+    if (cursor) cursor.remove();
+    const div = document.createElement("div");
+    div.className   = `log-${type}`;
+    div.textContent = tekst;
+    terminal.appendChild(div);
+    const cur = document.createElement("span");
+    cur.className = "cursor";
+    terminal.appendChild(cur);
+    terminal.scrollTop = terminal.scrollHeight;
+  }
+
+  function clearTerminal() {
+    document.getElementById("terminal").innerHTML = '<span class="cursor"></span>';
+    vorigeLogCount = 0;
+  }
+
+  async function clearLogs() {
+    await fetch(`${API}/logs`, {method: "DELETE"});
+    clearTerminal();
+  }
+
+  function startPolling() {
+    vorigeLogCount = 0;
+    polling = setInterval(async () => {
+      await haalLogsOp();
+      await haalStatusOp();
+    }, 2000);
+  }
+
+  function stopPolling() {
+    if (polling) { clearInterval(polling); polling = null; }
+  }
+
+  // ── Data laden ──
+  async function laadProducten() {
+    try {
+      const res  = await fetch(`${API}/producten`);
+      const data = await res.json();
+      const sel1 = document.getElementById("projectProductSelect");
+      const producten = Array.isArray(data.producten) ? data.producten : [];
+      sel1.innerHTML = '<option value="">-- Selecteer product --</option>';
+      producten.forEach(p => {
+        const opt = document.createElement("option");
+        opt.value       = p.id;
+        opt.textContent = `${p.product_naam} (ID ${p.id})`;
+        sel1.appendChild(opt);
+      });
+    } catch(e) {}
+  }
+
+  async function laadProjecten() {
+    try {
+      const res  = await fetch(`${API}/projecten`);
+      const data = await res.json();
+      const projecten = Array.isArray(data.projecten) ? data.projecten : [];
+
+      // Update dagelijks dropdown
+      const sel = document.getElementById("projectSelect");
+      sel.innerHTML = '<option value="">-- Alle projecten --</option>';
+      projecten.forEach(p => {
+        const opt = document.createElement("option");
+        opt.value       = p.id;
+        opt.textContent = `${p.project_naam} - ${p.doelland} (ID ${p.id})`;
+        sel.appendChild(opt);
+      });
+
+      // Update projecten lijst in sidebar
+      const lijst = document.getElementById("projectenLijst");
+      if (projecten.length === 0) {
+        lijst.innerHTML = '<div style="font-size:11px;color:#aaa;">Nog geen projecten</div>';
+        return;
+      }
+      lijst.innerHTML = "";
+      projecten.forEach(p => {
+        const div = document.createElement("div");
+        div.className = "item-card";
+        div.innerHTML = `
+          <div class="item-naam">${p.project_naam}</div>
+          <div class="item-meta">
+            <span class="badge badge-gray">${p.doelland}</span>
+            ${p.soul_id ? '<span class="badge badge-green">Soul ID</span>' : '<span class="badge badge-gray">Geen Soul ID</span>'}
+            <span class="badge badge-gray">ID ${p.id}</span>
+          </div>
+        `;
+        div.onclick = () => {
+          document.getElementById("projectSelect").value = p.id;
+          switchTab("dagelijks");
+        };
+        lijst.appendChild(div);
+      });
+    } catch(e) {}
+  }
+
+  // ── Init ──
+  laadProducten();
+  laadProjecten();
+  laadPlanning();
+  haalStatusOp();
+
+  // ── Planning ──
+  async function laadPlanning() {
+    try {
+      const res  = await fetch(`${API}/planning`);
+      const data = await res.json();
+      const planningen = Array.isArray(data.planning) ? data.planning : [];
+
+      // Toon planning overzicht als er planningen zijn
+      const overzicht = document.getElementById("planning-overzicht");
+      overzicht.style.display = planningen.length > 0 ? "block" : "none";
+
+      const lijst = document.getElementById("planningLijst");
+      if (planningen.length === 0) {
+        lijst.innerHTML = '<div style="font-size:11px;color:#aaa">Nog geen planning</div>';
+        return;
+      }
+
+      const DAGEN = ["ma", "di", "wo", "do", "vr", "za", "zo"];
+
+      lijst.innerHTML = "";
+      planningen.forEach(p => {
+        const project  = p.projecten || {};
+        const naam     = project.project_naam || "Onbekend";
+        const land     = project.doelland || "";
+        const dagen    = p.dagen || [];
+        const status   = p.laatste_status || "wacht";
+        const gepauz   = p.gepauzeerd;
+
+        const kaart = document.createElement("div");
+        kaart.className = `planning-kaart${gepauz ? " gepauzeerd" : ""}`;
+        kaart.innerHTML = `
+          <div class="planning-header">
+            <div class="planning-volgorde">${p.volgorde}</div>
+            <div>
+              <div class="planning-naam">${naam}</div>
+              <div class="planning-land">${land} &nbsp;·&nbsp; <span style="font-family:monospace;font-size:9px;color:#bbb">ID ${p.project_id}</span></div>
+            </div>
+            <span class="status-pill status-${status}">${status}</span>
+          </div>
+          <div class="dag-grid">
+            ${DAGEN.map(d => `
+              <div class="dag-btn ${dagen.includes(d) ? "actief" : ""}"
+                   onclick="toggleDag(${p.id}, '${d}', ${JSON.stringify(dagen)}, this)">
+                ${d}
+              </div>
+            `).join("")}
+          </div>
+          <div class="planning-acties">
+            <button class="act-btn" onclick="wijzigVolgorde(${p.id}, ${p.volgorde})">
+              # Volgorde
+            </button>
+            ${gepauz
+              ? `<button class="act-btn groen" onclick="hervat(${p.id})">Hervat</button>`
+              : `<button class="act-btn" onclick="pauzeer(${p.id})">Pauzeer</button>`
+            }
+            <button class="act-btn gevaar" onclick="verwijderPlanning(${p.id})">
+              Verwijder
+            </button>
+          </div>
+        `;
+        lijst.appendChild(kaart);
+      });
+
+    } catch(e) { console.error(e); }
+  }
+
+  function toggleDagNieuw(el) {
+    el.classList.toggle("actief");
+  }
+
+  async function voegToeAanPlanning() {
+    const projectId = document.getElementById("planningProjectSelect").value;
+    const volgorde  = parseInt(document.getElementById("planningVolgorde").value) || 1;
+
+    if (!projectId) { alert("Selecteer een project"); return; }
+
+    // Haal geselecteerde dagen op
+    const geselecteerdeDagen = [];
+    document.querySelectorAll("#content-planning .dag-btn.actief").forEach(el => {
+      geselecteerdeDagen.push(el.getAttribute("data-dag"));
+    });
+
+    if (geselecteerdeDagen.length === 0) {
+      alert("Selecteer minimaal 1 dag");
+      return;
+    }
+
+    const res  = await fetch(`${API}/planning/nieuw`, {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({
+        project_id: parseInt(projectId),
+        volgorde:   volgorde,
+        actief:     true,
+        gepauzeerd: false,
+        dagen:      geselecteerdeDagen
+      })
+    });
+    const data = await res.json();
+    if (data.success) {
+      laadPlanning();
+      document.getElementById("planningProjectSelect").value = "";
+    } else {
+      alert(data.bericht);
+    }
+  }
+
+  async function toggleDag(planningId, dag, huidigeDagen, el) {
+    let nieuwe_dagen;
+    if (huidigeDagen.includes(dag)) {
+      nieuwe_dagen = huidigeDagen.filter(d => d !== dag);
+      el.classList.remove("actief");
+    } else {
+      nieuwe_dagen = [...huidigeDagen, dag];
+      el.classList.add("actief");
+    }
+
+    await fetch(`${API}/planning/${planningId}`, {
+      method: "PATCH",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({dagen: nieuwe_dagen})
+    });
+
+    laadPlanning();
+  }
+
+  async function wijzigVolgorde(planningId, huidigeVolgorde) {
+    const nieuw = prompt("Nieuwe volgorde:", huidigeVolgorde);
+    if (!nieuw || isNaN(parseInt(nieuw))) return;
+
+    await fetch(`${API}/planning/${planningId}`, {
+      method: "PATCH",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({volgorde: parseInt(nieuw)})
+    });
+    laadPlanning();
+  }
+
+  async function pauzeer(planningId) {
+    await fetch(`${API}/planning/pauzeer/${planningId}`, {method: "POST"});
+    laadPlanning();
+  }
+
+  async function hervat(planningId) {
+    await fetch(`${API}/planning/hervat/${planningId}`, {method: "POST"});
+    laadPlanning();
+  }
+
+  async function verwijderPlanning(planningId) {
+    if (!confirm("Planning verwijderen?")) return;
+    await fetch(`${API}/planning/${planningId}`, {method: "DELETE"});
+    laadPlanning();
+  }
+</script>
+</body>
+</html>
