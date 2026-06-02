@@ -232,9 +232,39 @@ def voer_research_uit(product):
     return None
 
 
-def sla_research_op(product_id, rapport):
-    """Slaat research rapport op in Supabase."""
-    print("[Agent 2] Research opslaan in Supabase...")
+def sla_research_op_tabel(tabel, filter, rapport):
+    """Slaat research rapport op in opgegeven tabel."""
+    print(f"[Agent 2] Research opslaan in {tabel}...")
+
+    video_format_regels = {
+        "UGC": {"dos": rapport.get("ugc_dos", []), "donts": rapport.get("ugc_donts", [])},
+        "productshot": {"dos": rapport.get("productshot_dos", []), "donts": rapport.get("productshot_donts", [])}
+    }
+
+    hook_bibliotheek = [
+        {"hook_tekst": h.get("hook", ""), "format": h.get("format", ""), "emotie": h.get("emotie", "")}
+        for h in rapport.get("hook_bibliotheek", [])
+    ]
+
+    cta_bibliotheek = [
+        {"cta_tekst": c.get("cta", ""), "platform": c.get("platform", ""), "conversie_type": c.get("type", "")}
+        for c in rapport.get("cta_bibliotheek", [])
+    ]
+
+    data = {
+        "research_rapport":    rapport,
+        "hook_bibliotheek":    hook_bibliotheek,
+        "cta_bibliotheek":     cta_bibliotheek,
+        "video_format_regels": video_format_regels,
+        "research_gedaan":     True
+    }
+
+    succes = supabase_patch(tabel, filter, data)
+    if succes:
+        print(f"[Agent 2] OK Research opgeslagen in {tabel}")
+    return succes
+
+  
 
     # Bouw video format regels op uit platte structuur
     video_format_regels = {
